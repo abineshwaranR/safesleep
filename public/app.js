@@ -62,6 +62,9 @@ let state = {
   alarmTriggered: false,
   alarmAudioCtx: null,
   alarmInterval: null,
+  vibrationInterval: null,
+  isTestingAlarm: false,
+  testAlarmTimer: null,
   wakeLock: null
 };
 
@@ -342,6 +345,11 @@ document.getElementById("startJourneyBtn").onclick = startJourney;
 document.getElementById("endJourneyBtn").onclick = stopJourney;
 document.getElementById("stopAlarmBtn").onclick = silenceAlarm;
 
+const testAlarmBtn = document.getElementById("testAlarmBtn");
+if (testAlarmBtn) testAlarmBtn.onclick = toggleTestAlarm;
+const testAlarmJourneyBtn = document.getElementById("testAlarmJourneyBtn");
+if (testAlarmJourneyBtn) testAlarmJourneyBtn.onclick = toggleTestAlarm;
+
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -382,6 +390,7 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 function startJourney() {
+  unlockAudio();
   const errEl = document.getElementById("journeyError");
   if (errEl) errEl.textContent = "";
 
@@ -633,59 +642,291 @@ function updateRoadStats(distanceMeters, durationSeconds) {
   document.getElementById("roadStats").textContent = `Road distance: ${km} km · ETA ${mins} min`;
 }
 
-// ---------- Alarm ----------
-function triggerAlarm(distanceKm, destName) {
-  state.alarmTriggered = true;
-  document.getElementById("alarmBanner").classList.remove("hidden");
-  document.getElementById("alarmText").textContent =
-    `You are about ${distanceKm.toFixed(2)} km from ${destName}. Wake up!`;
+// ---------- Audio & Alarm Engine ----------
+function getAudioContext() {
+  if (!state.alarmAudioCtx) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      state.alarmAudioCtx = new AudioCtx();
+    }
+  }
+  return state.alarmAudioCtx;
+}
 
+let cachedAlarmWavUri = null;
+function getAlarmWavDataUri() {
+  if (cachedAlarmWavUri) return cachedAlarmWavUri;
+  try {
+    const sampleRate = 11025;
+    const duration = 1.0;
+    const numSamples = Math.floor(sampleRate * duration);
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+
+    function writeStr(offset, str) {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    }
+
+    writeStr(0, "RIFF");
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeStr(8, "WAVE");
+    writeStr(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, "data");
+    view.setUint32(40, numSamples * 2, true);
+
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      let sample = 0;
+      // 4 loud urgent alarm beeps:
+      if (t < 0.11) {
+        sample = Math.sin(2 * Math.PI * 950 * t);
+      } else if (t >= 0.13 && t < 0.24) {
+        sample = Math.sin(2 * Math.PI * 1350 * t);
+      } else if (t >= 0.26 && t < 0.37) {
+        sample = Math.sin(2 * Math.PI * 950 * t);
+      } else if (t >= 0.39 && t < 0.52) {
+        sample = Math.sin(2 * Math.PI * 1350 * t);
+      }
+      const intSample = Math.max(-32768, Math.min(32767, Math.floor(sample * 28000)));
+      view.setInt16(44 + i * 2, intSample, true);
+    }
+
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    cachedAlarmWavUri = "data:audio/wav;base64," + btoa(binary);
+  } catch (err) {
+    console.warn("WAV synthesis warning:", err);
+  }
+  return cachedAlarmWavUri;
+}
+
+function unlockAudio() {
+  try {
+    const ctx = getAudioContext();
+    if (ctx) {
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+      // Play 1-sample silence to unlock hardware audio routing
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    }
+  } catch (e) {
+    console.warn("AudioContext unlock warning:", e);
+  }
+
+  try {
+    const audioEl = document.getElementById("alarmAudioFallback");
+    if (audioEl) {
+      if (!audioEl.src) {
+        const uri = getAlarmWavDataUri();
+        if (uri) audioEl.src = uri;
+      }
+      const p = audioEl.play();
+      if (p !== undefined) {
+        p.then(() => {
+          if (!state.alarmTriggered && !state.isTestingAlarm) {
+            audioEl.pause();
+            audioEl.currentTime = 0;
+          }
+        }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.warn("Audio element unlock warning:", e);
+  }
+}
+
+// User-gesture triggers for early audio pre-warming on touch or click
+document.addEventListener("click", () => unlockAudio(), { once: true });
+document.addEventListener("touchstart", () => unlockAudio(), { once: true });
+
+function playAlarmChirp() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+
+  const now = ctx.currentTime;
+  const tones = [
+    { freq: 950, start: 0, dur: 0.11 },
+    { freq: 1350, start: 0.13, dur: 0.11 },
+    { freq: 950, start: 0.26, dur: 0.11 },
+    { freq: 1350, start: 0.39, dur: 0.14 }
+  ];
+
+  tones.forEach(({ freq, start, dur }) => {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(freq, now + start);
+
+      gain.gain.setValueAtTime(0.001, now + start);
+      gain.gain.exponentialRampToValueAtTime(0.85, now + start + 0.015);
+      gain.gain.setValueAtTime(0.85, now + start + dur - 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + start);
+      osc.stop(now + start + dur);
+    } catch (err) {
+      console.warn("Chirp play warning:", err);
+    }
+  });
+}
+
+function startVibrationLoop() {
+  if (!navigator.vibrate) return;
+  if (state.vibrationInterval) clearInterval(state.vibrationInterval);
+
+  const pattern = [700, 300, 700, 300, 700, 800];
+  try {
+    navigator.vibrate(pattern);
+  } catch (e) {}
+
+  state.vibrationInterval = setInterval(() => {
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {}
+  }, 3500);
+}
+
+function stopVibrationLoop() {
+  if (state.vibrationInterval) {
+    clearInterval(state.vibrationInterval);
+    state.vibrationInterval = null;
+  }
   if (navigator.vibrate) {
     try {
-      navigator.vibrate([400, 200, 400, 200, 400]);
+      navigator.vibrate(0);
     } catch (e) {}
   }
+}
+
+function startAlarmAudioLoop() {
+  unlockAudio();
+
+  // Web Audio siren loop
+  if (state.alarmInterval) clearInterval(state.alarmInterval);
+  playAlarmChirp();
+  state.alarmInterval = setInterval(playAlarmChirp, 900);
+
+  // Fallback Audio Element
+  try {
+    const audioEl = document.getElementById("alarmAudioFallback");
+    if (audioEl) {
+      if (!audioEl.src) {
+        const uri = getAlarmWavDataUri();
+        if (uri) audioEl.src = uri;
+      }
+      audioEl.currentTime = 0;
+      audioEl.play().catch((err) => console.warn("Fallback audio play warning:", err));
+    }
+  } catch (e) {}
+}
+
+function triggerAlarm(distanceKm, destName) {
+  state.alarmTriggered = true;
+  const banner = document.getElementById("alarmBanner");
+  if (banner) banner.classList.remove("hidden");
+  
+  const text = document.getElementById("alarmText");
+  if (text) {
+    text.textContent = `You are about ${distanceKm.toFixed(2)} km from ${destName}. Wake up!`;
+  }
+
+  // Looping continuous vibration
+  startVibrationLoop();
+
+  // System notification
   try {
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       new Notification("Wake up! Your stop is near.", {
-        body: `About ${distanceKm.toFixed(2)} km from ${destName}.`
+        body: `About ${distanceKm.toFixed(2)} km from ${destName}.`,
+        requireInteraction: true
       });
     }
   } catch (e) {}
-  playBeepLoop();
-}
 
-function playBeepLoop() {
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return;
-  state.alarmAudioCtx = new Ctx();
-
-  function beep() {
-    const ctx = state.alarmAudioCtx;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.15;
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.35);
-  }
-
-  beep();
-  state.alarmInterval = setInterval(beep, 700);
+  // Continuous sound
+  startAlarmAudioLoop();
 }
 
 function silenceAlarm() {
-  document.getElementById("alarmBanner").classList.add("hidden");
+  state.alarmTriggered = false;
+  state.isTestingAlarm = false;
+
+  const banner = document.getElementById("alarmBanner");
+  if (banner) banner.classList.add("hidden");
+
   if (state.alarmInterval) {
     clearInterval(state.alarmInterval);
     state.alarmInterval = null;
   }
-  if (state.alarmAudioCtx) {
-    state.alarmAudioCtx.close();
-    state.alarmAudioCtx = null;
+
+  const audioEl = document.getElementById("alarmAudioFallback");
+  if (audioEl) {
+    try {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+    } catch (e) {}
   }
+
+  stopVibrationLoop();
+
+  const testBtn = document.getElementById("testAlarmBtn");
+  if (testBtn) testBtn.textContent = "🔔 Test Alarm Sound & Vibration";
+  const testJourneyBtn = document.getElementById("testAlarmJourneyBtn");
+  if (testJourneyBtn) testJourneyBtn.textContent = "🔔 Test Alarm";
+
+  if (state.testAlarmTimer) {
+    clearTimeout(state.testAlarmTimer);
+    state.testAlarmTimer = null;
+  }
+}
+
+function toggleTestAlarm() {
+  unlockAudio();
+  if (state.isTestingAlarm) {
+    silenceAlarm();
+    return;
+  }
+
+  state.isTestingAlarm = true;
+  const testBtn = document.getElementById("testAlarmBtn");
+  if (testBtn) testBtn.textContent = "⏹️ Stop Alarm Test";
+  const testJourneyBtn = document.getElementById("testAlarmJourneyBtn");
+  if (testJourneyBtn) testJourneyBtn.textContent = "⏹️ Stop Alarm Test";
+
+  startVibrationLoop();
+  startAlarmAudioLoop();
+
+  state.testAlarmTimer = setTimeout(() => {
+    if (state.isTestingAlarm) {
+      silenceAlarm();
+    }
+  }, 5000);
 }
 
 // ---------- Bus stops directory ----------

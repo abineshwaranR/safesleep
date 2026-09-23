@@ -152,15 +152,39 @@ button.danger {
 #map { height: 320px; border-radius: var(--radius); margin: 16px 0; border: 1px solid #E7E3D8; }
 
 .alarm-banner {
-  background: var(--red);
+  background: linear-gradient(135deg, #d9381e 0%, #b82811 100%);
   color: #fff;
-  padding: 18px;
+  padding: 22px 16px;
   border-radius: var(--radius);
   text-align: center;
   margin-bottom: 18px;
+  box-shadow: 0 8px 30px rgba(217, 56, 30, 0.45);
+  animation: alarmPulse 1.2s infinite alternate ease-in-out;
 }
-.alarm-banner h2 { color: #fff; margin-bottom: 4px; }
-.alarm-banner button { margin-top: 12px; background: #fff; color: var(--red); border: none; padding: 12px 22px; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: inherit; }
+@keyframes alarmPulse {
+  0% { transform: scale(1); box-shadow: 0 4px 16px rgba(217, 56, 30, 0.4); }
+  100% { transform: scale(1.02); box-shadow: 0 10px 32px rgba(217, 56, 30, 0.8); }
+}
+.alarm-banner h2 { color: #fff; margin-bottom: 6px; font-size: 1.4rem; }
+.alarm-banner p { font-size: 1rem; opacity: 0.95; font-weight: 500; }
+.alarm-banner button {
+  margin-top: 14px;
+  background: #fff;
+  color: #d9381e;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: transform 0.15s ease;
+}
+.alarm-banner button:active {
+  transform: scale(0.96);
+}
 
 /* --- Stops / tickets list --- */
 .stop-row, .ticket-row {
