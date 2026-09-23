@@ -1,9 +1,12 @@
 // ---------- Config ----------
-// Allow dynamic backend API URL for standalone mobile packaging (e.g. Capacitor / Cordova)
+// Default to the live production server hosted on Render
+const DEFAULT_HOSTED_API = "https://safesleep.onrender.com/api";
 const API =
   window.SAFE_SLEEP_API_URL ||
   localStorage.getItem("bsa_api_url") ||
-  "/api";
+  (window.location.protocol.startsWith("http") && window.location.hostname === "localhost" && !window.Capacitor
+    ? "/api"
+    : DEFAULT_HOSTED_API);
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
 const OSRM = "https://router.project-osrm.org/route/v1/driving";
 const ROUTE_REFRESH_MS = 45000;
