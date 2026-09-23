@@ -1,0 +1,22 @@
+[
+  { "name": "Chennai - CMBT (Koyambedu)", "district": "Chennai", "lat": 13.0702, "lng": 80.1953 },
+  { "name": "Chennai - Broadway Bus Terminus", "district": "Chennai", "lat": 13.0919, "lng": 80.2847 },
+  { "name": "Coimbatore - Gandhipuram Bus Stand", "district": "Coimbatore", "lat": 11.0183, "lng": 76.9725 },
+  { "name": "Madurai - Mattuthavani Bus Stand", "district": "Madurai", "lat": 9.9450, "lng": 78.1650 },
+  { "name": "Trichy - Central Bus Stand", "district": "Tiruchirappalli", "lat": 10.8155, "lng": 78.6907 },
+  { "name": "Salem - New Bus Stand", "district": "Salem", "lat": 11.6822, "lng": 78.1461 },
+  { "name": "Salem - Old Bus Stand", "district": "Salem", "lat": 11.6643, "lng": 78.1460 },
+  { "name": "Erode - Bus Stand", "district": "Erode", "lat": 11.3410, "lng": 77.7172 },
+  { "name": "Vellore - New Bus Stand", "district": "Vellore", "lat": 12.9165, "lng": 79.1325 },
+  { "name": "Tirunelveli - Bus Stand", "district": "Tirunelveli", "lat": 8.7139, "lng": 77.7567 },
+  { "name": "Thanjavur - New Bus Stand", "district": "Thanjavur", "lat": 10.7870, "lng": 79.1378 },
+  { "name": "Dindigul - Bus Stand", "district": "Dindigul", "lat": 10.3624, "lng": 77.9695 },
+  { "name": "Karur - Bus Stand", "district": "Karur", "lat": 10.9601, "lng": 78.0766 },
+  { "name": "Namakkal - Bus Stand", "district": "Namakkal", "lat": 11.2189, "lng": 78.1677 },
+  { "name": "Hosur - Bus Stand", "district": "Krishnagiri", "lat": 12.7409, "lng": 77.8253 },
+  { "name": "Pollachi - Bus Stand", "district": "Coimbatore", "lat": 10.6588, "lng": 77.0084 },
+  { "name": "Kumbakonam - Bus Stand", "district": "Thanjavur", "lat": 10.9601, "lng": 79.3788 },
+  { "name": "Nagercoil - Bus Stand", "district": "Kanniyakumari", "lat": 8.1780, "lng": 77.4340 },
+  { "name": "Villupuram - Bus Stand", "district": "Villupuram", "lat": 11.9401, "lng": 79.4861 },
+  { "name": "Cuddalore - Bus Stand", "district": "Cuddalore", "lat": 11.7480, "lng": 79.7714 }
+]

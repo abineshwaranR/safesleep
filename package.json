@@ -1,0 +1,26 @@
+{
+  "name": "safesleep",
+  "version": "1.0.0",
+  "description": "Destination-based wake-up alarm for bus travellers, with Tamil Nadu bus stop directory and missing-stop tickets. Uses OpenStreetMap (Leaflet + Nominatim + Overpass) for maps and geocoding.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "import:stops": "node scripts/import-overpass.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  }
+}

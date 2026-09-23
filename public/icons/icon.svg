@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1F2749" />
+      <stop offset="100%" stop-color="#0E1222" />
+    </linearGradient>
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFC875" />
+      <stop offset="100%" stop-color="#F2A65A" />
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4EAA98" />
+      <stop offset="100%" stop-color="#2D6A5E" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer subtle radar pulse ring -->
+  <circle cx="256" cy="230" r="150" fill="none" stroke="#F2A65A" stroke-width="2.5" stroke-dasharray="10 8" opacity="0.25" />
+  <circle cx="256" cy="230" r="185" fill="none" stroke="#3D8577" stroke-width="2" stroke-dasharray="12 10" opacity="0.2" />
+
+  <!-- Crescent Sleep Moon (smooth bezier curve) -->
+  <path d="M 315 130 C 230 130 162 198 162 282 C 162 335 188 381 228 409 C 205 385 192 352 192 316 C 192 245 250 187 321 187 C 342 187 362 192 380 201 C 363 159 341 130 315 130 Z"
+        fill="url(#amberGrad)"
+        filter="url(#glow)" />
+
+  <!-- Destination Bus / Pin Icon at Center -->
+  <g transform="translate(230, 160)">
+    <!-- Location Pin Pinhead -->
+    <path d="M 45 0 C 20.1 0 0 20.1 0 45 C 0 78.8 45 130 45 130 C 45 130 90 78.8 90 45 C 90 20.1 69.9 0 45 0 Z" fill="#F5F3ED" />
+    <!-- Pin Core Inner Window / Bus Front -->
+    <circle cx="45" cy="45" r="24" fill="#161B33" />
+    <!-- Glowing Alert Center -->
+    <circle cx="45" cy="45" r="12" fill="url(#amberGrad)" />
+  </g>
+
+  <!-- Sound / Alarm Waves on upper right -->
+  <path d="M 375 160 A 35 35 0 0 1 395 195" fill="none" stroke="url(#amberGrad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 395 140 A 65 65 0 0 1 430 205" fill="none" stroke="url(#amberGrad)" stroke-width="8" stroke-linecap="round" opacity="0.75" />
+
+  <!-- Road / Transit Journey Line at base -->
+  <path d="M 120 420 Q 256 370 392 420" fill="none" stroke="url(#tealGrad)" stroke-width="10" stroke-linecap="round" />
+  <circle cx="150" cy="413" r="7" fill="#F2A65A" />
+  <circle cx="256" cy="385" r="8" fill="#F5F3ED" />
+  <circle cx="362" cy="413" r="7" fill="#3D8577" />
+</svg>

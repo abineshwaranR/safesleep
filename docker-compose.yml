@@ -1,0 +1,19 @@
+services:
+  safesleep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: safesleep-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-change-this-jwt-secret-in-production}
+    volumes:
+      - safesleep_data:/app/data
+
+volumes:
+  safesleep_data:
+    driver: local
