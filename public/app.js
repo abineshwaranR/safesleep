@@ -216,19 +216,29 @@ document.querySelectorAll("#mainNav button[data-view]").forEach((b) => {
 
 // ---------- Destination search (Nominatim / OpenStreetMap) ----------
 let searchDebounce = null;
-document.getElementById("destInput").addEventListener("input", (e) => {
+const destInputEl = document.getElementById("destInput");
+const startJourneyBtnEl = document.getElementById("startJourneyBtn");
+
+destInputEl.addEventListener("input", (e) => {
   clearTimeout(searchDebounce);
   const q = e.target.value.trim();
   state.selectedDest = null;
-  document.getElementById("startJourneyBtn").disabled = true;
-  if (q.length < 3) {
+  // Enable start button as soon as 2 characters are typed
+  startJourneyBtnEl.disabled = q.length < 2;
+
+  if (q.length < 2) {
     document.getElementById("destResults").innerHTML = "";
     return;
   }
-  // Directory prefix-match is a fast local call, so fire it almost
-  // immediately; Nominatim is a shared external service, so debounce it.
   searchStopDirectory(q);
-  searchDebounce = setTimeout(() => searchNominatim(q), 450);
+  searchDebounce = setTimeout(() => searchNominatim(q), 350);
+});
+
+destInputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    startJourney();
+  }
 });
 
 let latestStopMatches = [];
@@ -372,37 +382,84 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 function startJourney() {
-  if (!state.selectedDest) return;
+  const errEl = document.getElementById("journeyError");
+  if (errEl) errEl.textContent = "";
+
+  // 1. If user hasn't explicitly tapped a dropdown item, auto-select from typed query!
+  if (!state.selectedDest) {
+    const typed = (document.getElementById("destInput").value || "").trim();
+    if (!typed) {
+      if (errEl) errEl.textContent = "Please enter your destination stop name.";
+      return;
+    }
+    const match = latestStopMatches[0] || filterBundledStops(typed)[0] || latestGeoMatches[0];
+    if (match) {
+      state.selectedDest = {
+        name: match.name || match.display_name.split(",")[0],
+        lat: parseFloat(match.lat),
+        lng: parseFloat(match.lng || match.lon)
+      };
+      document.getElementById("destInput").value = state.selectedDest.name;
+    } else {
+      if (errEl) errEl.textContent = "Searching destination... Please tap a stop from the suggestions.";
+      return;
+    }
+  }
+
   if (!("geolocation" in navigator)) {
-    document.getElementById("journeyError").textContent = "This browser doesn't support location access.";
+    if (errEl) errEl.textContent = "This device or browser does not support GPS location.";
     return;
   }
 
-  if (Notification && Notification.permission === "default") {
-    Notification.requestPermission();
+  // Safe notification permission check (never throw ReferenceError in Android WebView)
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch (notifErr) {
+    console.warn("Notification check skipped:", notifErr);
   }
 
   // Keep screen awake while tracking transit
-  requestWakeLock();
+  try {
+    requestWakeLock();
+  } catch (wErr) {
+    console.warn("WakeLock check skipped:", wErr);
+  }
 
   state.alarmTriggered = false;
+
+  // Immediately switch cards from setup to active journey
   document.getElementById("setupCard").classList.add("hidden");
   document.getElementById("journeyCard").classList.remove("hidden");
   document.getElementById("destName").textContent = "to " + state.selectedDest.name;
+  document.getElementById("statusPill").textContent = "Acquiring GPS location…";
+  document.getElementById("statusPill").classList.remove("alert");
 
-  initMap();
+  try {
+    initMap();
+  } catch (mapErr) {
+    console.warn("Map initialization error:", mapErr);
+  }
 
-  state.watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
-    enableHighAccuracy: true,
-    maximumAge: 5000,
-    timeout: 15000
-  });
+  try {
+    state.watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+      enableHighAccuracy: true,
+      maximumAge: 5000,
+      timeout: 15000
+    });
+  } catch (geoErr) {
+    console.error("watchPosition error:", geoErr);
+    if (errEl) errEl.textContent = "GPS error: " + geoErr.message;
+  }
 }
 
 function stopJourney() {
   releaseWakeLock();
   if (state.watchId !== null) {
-    navigator.geolocation.clearWatch(state.watchId);
+    try {
+      navigator.geolocation.clearWatch(state.watchId);
+    } catch (e) {}
     state.watchId = null;
   }
   silenceAlarm();
@@ -417,39 +474,61 @@ function stopJourney() {
   state.lastRouteTime = 0;
 }
 
-const busIcon = L.divIcon({
+const busIcon = (typeof L !== "undefined") ? L.divIcon({
   className: "",
   html: '<div style="font-size:22px; transform: translate(-50%,-50%);">🚌</div>',
   iconSize: [0, 0]
-});
-const pinIcon = L.divIcon({
+}) : null;
+
+const pinIcon = (typeof L !== "undefined") ? L.divIcon({
   className: "",
   html: '<div style="font-size:26px; transform: translate(-50%,-95%);">📍</div>',
   iconSize: [0, 0]
-});
+}) : null;
 
 function initMap() {
+  if (typeof L === "undefined") {
+    console.warn("Leaflet map library is not loaded yet.");
+    return;
+  }
   if (state.map) {
-    state.map.remove();
+    try {
+      state.map.remove();
+    } catch (e) {}
     state.map = null;
   }
   state.lastRouteOrigin = null;
   state.lastRouteTime = 0;
 
-  state.map = L.map("map").setView([state.selectedDest.lat, state.selectedDest.lng], 12);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors",
-    maxZoom: 19
-  }).addTo(state.map);
+  try {
+    state.map = L.map("map").setView([state.selectedDest.lat, state.selectedDest.lng], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19
+    }).addTo(state.map);
 
-  state.destMarker = L.marker([state.selectedDest.lat, state.selectedDest.lng], { icon: pinIcon })
-    .addTo(state.map)
-    .bindPopup("Destination: " + state.selectedDest.name);
+    if (pinIcon) {
+      state.destMarker = L.marker([state.selectedDest.lat, state.selectedDest.lng], { icon: pinIcon })
+        .addTo(state.map)
+        .bindPopup("Destination: " + state.selectedDest.name);
+    }
+
+    // Force Leaflet to compute correct dimensions when container becomes visible
+    setTimeout(() => {
+      if (state.map) state.map.invalidateSize();
+    }, 200);
+  } catch (err) {
+    console.warn("Leaflet setup warning:", err);
+  }
 }
 
 function onPositionError(err) {
-  document.getElementById("statusPill").textContent = "Location error: " + err.message;
-  document.getElementById("statusPill").classList.add("alert");
+  console.warn("GPS Position Error:", err);
+  const pill = document.getElementById("statusPill");
+  if (pill) {
+    pill.textContent = "GPS waiting: " + (err.message || "Please enable phone Location.");
+    pill.classList.add("alert");
+  }
 }
 
 function onPosition(pos) {
@@ -562,13 +641,17 @@ function triggerAlarm(distanceKm, destName) {
     `You are about ${distanceKm.toFixed(2)} km from ${destName}. Wake up!`;
 
   if (navigator.vibrate) {
-    navigator.vibrate([400, 200, 400, 200, 400]);
+    try {
+      navigator.vibrate([400, 200, 400, 200, 400]);
+    } catch (e) {}
   }
-  if (Notification && Notification.permission === "granted") {
-    new Notification("Wake up! Your stop is near.", {
-      body: `About ${distanceKm.toFixed(2)} km from ${destName}.`
-    });
-  }
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification("Wake up! Your stop is near.", {
+        body: `About ${distanceKm.toFixed(2)} km from ${destName}.`
+      });
+    }
+  } catch (e) {}
   playBeepLoop();
 }
 
