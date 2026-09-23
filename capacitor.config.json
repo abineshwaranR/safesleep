@@ -2,7 +2,6 @@
   "appId": "com.safesleep.app",
   "appName": "SafeSleep",
   "webDir": "public",
-  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https",
     "cleartext": true

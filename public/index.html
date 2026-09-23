@@ -60,6 +60,21 @@
       <div class="error-text" id="registerError"></div>
       <p class="switch-link">Already have an account? <a id="showLogin">Log in</a></p>
     </div>
+
+    <div style="margin: 20px 0 14px; text-align: center; border-top: 1px solid #e0dfd5; padding-top: 16px;">
+      <button class="secondary" id="guestBtn" style="width: 100%; font-size: 1rem; padding: 12px;">⚡ Use Offline / Continue as Guest</button>
+      <p class="lead" style="font-size: 0.85rem; margin-top: 6px; color: var(--muted);">No account needed. Use GPS wake-up alarm immediately.</p>
+    </div>
+
+    <div style="margin-top: 12px; border-top: 1px solid #e0dfd5; padding-top: 10px; font-size: 0.88rem;">
+      <a id="toggleServerConfig" style="cursor:pointer; color: var(--muted); text-decoration: underline;">⚙️ Backend Server Settings</a>
+      <div id="serverConfigBox" class="hidden" style="margin-top: 10px;">
+        <label for="serverUrlInput" style="font-size: 0.82rem;">Backend Server URL (e.g. Render / Cloud)</label>
+        <input id="serverUrlInput" type="url" placeholder="https://safesleep.onrender.com/api" />
+        <button class="secondary" id="saveServerUrlBtn" style="margin-top: 6px; padding: 6px 12px; font-size: 0.85rem;">Save Server URL</button>
+        <span id="serverUrlStatus" style="margin-left: 8px; font-size: 0.85rem;"></span>
+      </div>
+    </div>
   </div>
 </div>
 

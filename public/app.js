@@ -5,20 +5,43 @@ const API =
   localStorage.getItem("bsa_api_url") ||
   "/api";
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-// Nominatim's usage policy asks for max 1 request/sec and an identifying
-// referer/user-agent. The debounce below keeps us well within that.
-
-// OSRM (Open Source Routing Machine) — also OpenStreetMap-based — turns two
-// points into an actual road-following route instead of a straight line.
-// This is the public demo server: fine for a prototype, but it's shared and
-// rate-limited, so we throttle how often we call it (see ROUTE_REFRESH_MS)
-// and self-host OSRM if this app goes into real production use.
 const OSRM = "https://router.project-osrm.org/route/v1/driving";
-const ROUTE_REFRESH_MS = 45000; // re-fetch the road route at most every 45s
-const ROUTE_REFRESH_KM = 0.3; // ...or sooner if the user has moved this far
+const ROUTE_REFRESH_MS = 45000;
+const ROUTE_REFRESH_KM = 0.3;
+const TN_VIEWBOX = "76.2,13.6,80.4,8.0";
 
-// Tamil Nadu rough bounding box, used to bias/limit geocoding results.
-const TN_VIEWBOX = "76.2,13.6,80.4,8.0"; // left,top,right,bottom
+// Pre-bundled Tamil Nadu major bus stands so mobile app works 100% offline
+const BUNDLED_STOPS = [
+  { name: "Chennai - CMBT (Koyambedu)", district: "Chennai", lat: 13.0702, lng: 80.1953 },
+  { name: "Chennai - Broadway Bus Terminus", district: "Chennai", lat: 13.0919, lng: 80.2847 },
+  { name: "Coimbatore - Gandhipuram Bus Stand", district: "Coimbatore", lat: 11.0183, lng: 76.9725 },
+  { name: "Madurai - Mattuthavani Bus Stand", district: "Madurai", lat: 9.9450, lng: 78.1650 },
+  { name: "Trichy - Central Bus Stand", district: "Tiruchirappalli", lat: 10.8155, lng: 78.6907 },
+  { name: "Salem - New Bus Stand", district: "Salem", lat: 11.6822, lng: 78.1461 },
+  { name: "Salem - Old Bus Stand", district: "Salem", lat: 11.6643, lng: 78.1460 },
+  { name: "Erode - Bus Stand", district: "Erode", lat: 11.3410, lng: 77.7172 },
+  { name: "Vellore - New Bus Stand", district: "Vellore", lat: 12.9165, lng: 79.1325 },
+  { name: "Tirunelveli - Bus Stand", district: "Tirunelveli", lat: 8.7139, lng: 77.7567 },
+  { name: "Thanjavur - New Bus Stand", district: "Thanjavur", lat: 10.7870, lng: 79.1378 },
+  { name: "Dindigul - Bus Stand", district: "Dindigul", lat: 10.3624, lng: 77.9695 },
+  { name: "Karur - Bus Stand", district: "Karur", lat: 10.9601, lng: 78.0766 },
+  { name: "Namakkal - Bus Stand", district: "Namakkal", lat: 11.2189, lng: 78.1677 },
+  { name: "Hosur - Bus Stand", district: "Krishnagiri", lat: 12.7409, lng: 77.8253 },
+  { name: "Pollachi - Bus Stand", district: "Coimbatore", lat: 10.6588, lng: 77.0084 },
+  { name: "Kumbakonam - Bus Stand", district: "Thanjavur", lat: 10.9601, lng: 79.3788 },
+  { name: "Nagercoil - Bus Stand", district: "Kanniyakumari", lat: 8.1780, lng: 77.4340 },
+  { name: "Villupuram - Bus Stand", district: "Villupuram", lat: 11.9401, lng: 79.4861 },
+  { name: "Cuddalore - Bus Stand", district: "Cuddalore", lat: 11.7480, lng: 79.7714 }
+];
+
+function filterBundledStops(q = "", district = "") {
+  const term = q.toLowerCase();
+  return BUNDLED_STOPS.filter((s) => {
+    const matchQ = !term || s.name.toLowerCase().includes(term);
+    const matchD = !district || s.district.toLowerCase() === district.toLowerCase();
+    return matchQ && matchD;
+  });
+}
 
 let state = {
   token: localStorage.getItem("bsa_token") || null,
@@ -30,7 +53,7 @@ let state = {
   destMarker: null,
   routeLine: null,
   routeLineOutline: null,
-  lastRouteOrigin: null, // { lat, lng } used for the most recent OSRM fetch
+  lastRouteOrigin: null,
   lastRouteTime: 0,
   routeInFlight: false,
   alarmTriggered: false,
@@ -44,14 +67,24 @@ async function api(path, { method = "GET", body, auth = true } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (auth && state.token) headers.Authorization = `Bearer ${state.token}`;
 
-  const resp = await fetch(API + path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || "Something went wrong.");
-  return data;
+  try {
+    const resp = await fetch(API + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || "Something went wrong.");
+    return data;
+  } catch (err) {
+    // Friendly error when mobile app is not connected to a remote server
+    if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+      throw new Error(
+        "Cannot reach backend server. Tap 'Use Offline / Continue as Guest' below to start immediately, or set your server URL in Server Settings."
+      );
+    }
+    throw err;
+  }
 }
 
 // ---------- View routing ----------
@@ -122,6 +155,49 @@ function onAuthSuccess(data) {
   setLoggedInUI(true);
 }
 
+// Guest Mode: allows running the app immediately with zero server/login required
+const guestBtn = document.getElementById("guestBtn");
+if (guestBtn) {
+  guestBtn.onclick = () => {
+    state.user = { id: 0, name: "Guest Traveller", role: "guest" };
+    state.token = "guest-session";
+    localStorage.setItem("bsa_user", JSON.stringify(state.user));
+    localStorage.setItem("bsa_token", state.token);
+    setLoggedInUI(true);
+  };
+}
+
+// Server URL Settings
+const toggleServer = document.getElementById("toggleServerConfig");
+const serverBox = document.getElementById("serverConfigBox");
+const serverInput = document.getElementById("serverUrlInput");
+const saveServerBtn = document.getElementById("saveServerUrlBtn");
+const serverStatus = document.getElementById("serverUrlStatus");
+
+if (serverInput) {
+  serverInput.value = localStorage.getItem("bsa_api_url") || "";
+}
+if (toggleServer && serverBox) {
+  toggleServer.onclick = () => serverBox.classList.toggle("hidden");
+}
+if (saveServerBtn && serverInput) {
+  saveServerBtn.onclick = () => {
+    let url = serverInput.value.trim();
+    if (url && !url.endsWith("/api")) {
+      url = url.replace(/\/+$/, "") + "/api";
+    }
+    if (url) {
+      localStorage.setItem("bsa_api_url", url);
+      serverStatus.textContent = "Saved! Reloading...";
+      setTimeout(() => location.reload(), 500);
+    } else {
+      localStorage.removeItem("bsa_api_url");
+      serverStatus.textContent = "Reset to default. Reloading...";
+      setTimeout(() => location.reload(), 500);
+    }
+  };
+}
+
 document.getElementById("logoutBtn").onclick = () => {
   stopJourney();
   state.token = null;
@@ -155,15 +231,14 @@ document.getElementById("destInput").addEventListener("input", (e) => {
 let latestStopMatches = [];
 let latestGeoMatches = [];
 
-// 1) Search our own Tamil Nadu bus stop directory by prefix — "type 3
-//    letters, see stop names in the database that start with them".
+// 1) Search Tamil Nadu bus stop directory by prefix — falls back to bundled stops offline
 async function searchStopDirectory(q) {
   try {
     const { stops } = await api(`/stops?prefix=${encodeURIComponent(q)}&limit=8`, { auth: false });
-    latestStopMatches = stops;
+    latestStopMatches = (stops && stops.length > 0) ? stops : filterBundledStops(q);
     renderDestResults();
   } catch (e) {
-    latestStopMatches = [];
+    latestStopMatches = filterBundledStops(q);
     renderDestResults();
   }
 }
@@ -529,14 +604,18 @@ function silenceAlarm() {
 
 // ---------- Bus stops directory ----------
 async function loadStops() {
+  const sel = document.getElementById("districtFilter");
   try {
     const { districts } = await api("/stops/districts", { auth: false });
-    const sel = document.getElementById("districtFilter");
     sel.innerHTML =
       '<option value="">All districts</option>' +
       districts.map((d) => `<option value="${d}">${d}</option>`).join("");
   } catch (e) {
-    /* non-fatal */
+    // Offline / fallback districts
+    const districts = [...new Set(BUNDLED_STOPS.map((s) => s.district))].sort();
+    sel.innerHTML =
+      '<option value="">All districts</option>' +
+      districts.map((d) => `<option value="${d}">${d}</option>`).join("");
   }
   await refreshStopsList();
 }
@@ -544,27 +623,31 @@ async function loadStops() {
 async function refreshStopsList() {
   const q = document.getElementById("stopSearch").value.trim();
   const district = document.getElementById("districtFilter").value;
-  const params = new URLSearchParams();
-  if (q) params.set("q", q);
-  if (district) params.set("district", district);
+  const box = document.getElementById("stopsList");
 
+  let stops = [];
   try {
-    const { stops } = await api("/stops?" + params.toString(), { auth: false });
-    const box = document.getElementById("stopsList");
-    if (!stops.length) {
-      box.innerHTML = '<p class="lead">No stops match yet — raise a ticket below.</p>';
-      return;
-    }
-    box.innerHTML = stops
-      .map(
-        (s) => `<div class="stop-row">
-          <div><div class="name">${escapeHtml(s.name)}</div><div class="meta">${escapeHtml(s.district)}</div></div>
-        </div>`
-      )
-      .join("");
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (district) params.set("district", district);
+    const data = await api("/stops?" + params.toString(), { auth: false });
+    stops = data.stops || [];
   } catch (e) {
-    document.getElementById("stopsList").innerHTML = '<p class="error-text">Could not load stops.</p>';
+    // Offline fallback from pre-bundled Tamil Nadu stops
+    stops = filterBundledStops(q, district);
   }
+
+  if (!stops.length) {
+    box.innerHTML = '<p class="lead">No stops match yet — raise a ticket below.</p>';
+    return;
+  }
+  box.innerHTML = stops
+    .map(
+      (s) => `<div class="stop-row">
+        <div><div class="name">${escapeHtml(s.name)}</div><div class="meta">${escapeHtml(s.district)}</div></div>
+      </div>`
+    )
+    .join("");
 }
 document.getElementById("stopSearch").addEventListener("input", debounce(refreshStopsList, 300));
 document.getElementById("districtFilter").addEventListener("change", refreshStopsList);
@@ -649,6 +732,15 @@ async function loadTickets() {
 
 // ---------- Profile ----------
 async function loadProfile() {
+  if (state.user?.role === "guest") {
+    document.getElementById("pName").textContent = "Guest Traveller (Offline Mode)";
+    document.getElementById("pEmail").textContent = "Local Session";
+    document.getElementById("pPhone").textContent = "—";
+    document.getElementById("pRole").textContent = "guest";
+    document.getElementById("editName").value = "Guest Traveller";
+    document.getElementById("editPhone").value = "";
+    return;
+  }
   try {
     const { user } = await api("/auth/profile");
     state.user = user;
