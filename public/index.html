@@ -2,201 +2,384 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>SafeSleep — Bus Wake-Up Alarm</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>SafeSleep — Google Maps Style Transit Alarm</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 <link rel="alternate icon" type="image/png" href="icons/icon-192.png" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<meta name="theme-color" content="#161B33" />
+<meta name="theme-color" content="#1A73E8" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="SafeSleep" />
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+
+<!-- Google Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+<!-- App CSS -->
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> SafeSleep</div>
+<!-- 1. FULLSCREEN MAP CANVAS (Google Maps Style) -->
+<div id="mapContainer">
+  <div id="map"></div>
+</div>
+
+<!-- 2. TOP FLOATING APP NAVIGATION BAR -->
+<header class="topbar">
+  <div class="brand" id="brandLogo">
+    <div class="brand-icon">🚌</div>
+    <span>SafeSleep</span>
+  </div>
   <nav id="mainNav" class="hidden">
-    <button data-view="dashboard" class="active">Journey</button>
-    <button data-view="stops">Bus Stops</button>
-    <button data-view="tickets">My Tickets</button>
-    <button data-view="profile">Profile</button>
-    <button id="logoutBtn">Log out</button>
+    <button data-view="dashboard" class="active" title="Map & Journey">
+      <span>🗺️</span><span class="nav-label">Map</span>
+    </button>
+    <button data-view="stops" title="Bus Stop Directory">
+      <span>🚏</span><span class="nav-label">Stops</span>
+    </button>
+    <button data-view="tickets" title="My Submitted Tickets">
+      <span>🎫</span><span class="nav-label">Tickets</span>
+    </button>
+    <button data-view="profile" title="My Profile">
+      <span>👤</span><span class="nav-label">Profile</span>
+    </button>
+    <button id="logoutBtn" title="Log Out">Log out</button>
   </nav>
+</header>
+
+<!-- 3. FLOATING SEARCH BAR & QUICK HUB CHIPS -->
+<div class="floating-search-wrapper" id="searchWrapper">
+  <div class="floating-search-bar" id="searchBar">
+    <div class="search-leading-icon">🔍</div>
+    <input
+      id="destInput"
+      type="text"
+      placeholder="Where to? (Search stop, town, station)..."
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <button type="button" class="search-action-btn hidden" id="clearDestInputBtn" title="Clear input">✕</button>
+    <button type="button" class="search-action-btn" id="searchLocateBtn" title="My GPS Location">🎯</button>
+  </div>
+
+  <!-- Quick Tamil Nadu Transit Hub Pills -->
+  <div class="quick-hub-scroll" id="quickHubChips">
+    <div class="hub-chip" data-dest="Salem - New Bus Stand" data-lat="11.6822" data-lng="78.1461">⚡ Salem New</div>
+    <div class="hub-chip" data-dest="Chennai - CMBT (Koyambedu)" data-lat="13.0702" data-lng="80.1953">🚌 Chennai CMBT</div>
+    <div class="hub-chip" data-dest="Coimbatore - Gandhipuram Bus Stand" data-lat="11.0183" data-lng="76.9725">📍 Coimbatore</div>
+    <div class="hub-chip" data-dest="Madurai - Mattuthavani Bus Stand" data-lat="9.9450" data-lng="78.1650">✨ Madurai</div>
+    <div class="hub-chip" data-dest="Trichy - Central Bus Stand" data-lat="10.8155" data-lng="78.6907">🏢 Trichy Central</div>
+    <div class="hub-chip" data-dest="Vellore - New Bus Stand" data-lat="12.9165" data-lng="79.1325">🚏 Vellore</div>
+    <div class="hub-chip" data-dest="Tirunelveli - Bus Stand" data-lat="8.7139" data-lng="77.7567">🌴 Tirunelveli</div>
+    <div class="hub-chip" data-dest="Nagercoil - Bus Stand" data-lat="8.1780" data-lng="77.4340">🌊 Nagercoil</div>
+  </div>
+
+  <!-- Autocomplete Suggestions Dropdown -->
+  <div id="destResults"></div>
 </div>
 
-<!-- AUTH VIEW -->
-<div id="authView" class="container">
-  <div class="card">
-    <h1>Never miss your stop again</h1>
-    <p class="lead">Set your destination, fall asleep, and we'll wake you 1.5&nbsp;km before you get there.</p>
+<!-- 4. GOOGLE MAPS FLOATING ACTION CONTROLS (Right Edge) -->
+<div class="gm-floating-controls" id="mapControls">
+  <!-- Layer Picker Menu (Popover) -->
+  <div class="layer-picker-menu hidden" id="layerPickerMenu">
+    <button type="button" class="layer-option-btn active" data-layer="streets">
+      <span>🗺️</span> Streets
+    </button>
+    <button type="button" class="layer-option-btn" data-layer="satellite">
+      <span>🛰️</span> Satellite
+    </button>
+    <button type="button" class="layer-option-btn" data-layer="night">
+      <span>🌙</span> Night Mode
+    </button>
+  </div>
 
-    <div id="loginForm">
-      <label for="loginEmail">Email</label>
-      <input id="loginEmail" type="email" placeholder="you@example.com" />
-      <label for="loginPassword">Password</label>
-      <input id="loginPassword" type="password" placeholder="••••••••" />
-      <button class="primary" id="loginBtn">Log in</button>
-      <div class="error-text" id="loginError"></div>
-      <p class="switch-link">New here? <a id="showRegister">Create an account</a></p>
-    </div>
+  <!-- Layer Toggle Button -->
+  <button type="button" class="gm-fab" id="layerToggleBtn" title="Change Map Style">
+    🗺️
+  </button>
 
-    <div id="registerForm" class="hidden">
-      <label for="regName">Full name</label>
-      <input id="regName" type="text" placeholder="Your name" />
-      <label for="regEmail">Email</label>
-      <input id="regEmail" type="email" placeholder="you@example.com" />
-      <label for="regPhone">Phone (optional)</label>
-      <input id="regPhone" type="tel" placeholder="9876543210" />
-      <label for="regPassword">Password</label>
-      <input id="regPassword" type="password" placeholder="At least 6 characters" />
-      <button class="primary" id="registerBtn">Create account</button>
-      <div class="error-text" id="registerError"></div>
-      <p class="switch-link">Already have an account? <a id="showLogin">Log in</a></p>
-    </div>
+  <!-- Fit Route Overview -->
+  <button type="button" class="gm-fab hidden" id="fitRouteBtn" title="Fit Entire Route">
+    🛣️
+  </button>
 
-    <div style="margin: 20px 0 14px; text-align: center; border-top: 1px solid #e0dfd5; padding-top: 16px;">
-      <button class="secondary" id="guestBtn" style="width: 100%; font-size: 1rem; padding: 12px;">⚡ Use Offline / Continue as Guest</button>
-      <p class="lead" style="font-size: 0.85rem; margin-top: 6px; color: var(--muted);">No account needed. Use GPS wake-up alarm immediately.</p>
-    </div>
+  <!-- My Location Recenter Button -->
+  <button type="button" class="gm-fab" id="recenterBtn" title="Center on My Location">
+    🎯
+  </button>
 
-    <div style="margin-top: 12px; border-top: 1px solid #e0dfd5; padding-top: 10px; font-size: 0.88rem;">
-      <a id="toggleServerConfig" style="cursor:pointer; color: var(--muted); text-decoration: underline;">⚙️ Backend Server Settings</a>
-      <div id="serverConfigBox" class="hidden" style="margin-top: 10px;">
-        <label for="serverUrlInput" style="font-size: 0.82rem;">Backend Server URL (e.g. Render / Cloud)</label>
-        <input id="serverUrlInput" type="url" placeholder="https://safesleep.onrender.com/api" />
-        <button class="secondary" id="saveServerUrlBtn" style="margin-top: 6px; padding: 6px 12px; font-size: 0.85rem;">Save Server URL</button>
-        <span id="serverUrlStatus" style="margin-left: 8px; font-size: 0.85rem;"></span>
-      </div>
-    </div>
+  <!-- Zoom Pill -->
+  <div class="gm-zoom-pill">
+    <button type="button" class="gm-zoom-btn" id="zoomInBtn" title="Zoom In">+</button>
+    <div class="gm-zoom-divider"></div>
+    <button type="button" class="gm-zoom-btn" id="zoomOutBtn" title="Zoom Out">−</button>
   </div>
 </div>
 
-<!-- DASHBOARD / JOURNEY VIEW -->
-<div id="dashboardView" class="container hidden">
+<!-- 5. FLOATING BOTTOM SHEET CARDS (Google Maps Experience) -->
+<div class="bottom-sheet-container" id="bottomSheets">
+  
+  <!-- Setup / Destination Card (#setupCard) -->
+  <div class="floating-card" id="setupCard">
+    <div class="sheet-handle"></div>
 
-  <div id="alarmBanner" class="alarm-banner hidden">
-    <h2>Wake up! Your stop is close.</h2>
-    <p id="alarmText">You are near your destination.</p>
-    <button id="stopAlarmBtn">Stop alarm</button>
-  </div>
-
-  <div class="card" id="setupCard">
-    <h2>Where are you headed?</h2>
-    <label for="destInput">Destination (search any place in Tamil Nadu)</label>
-    <input id="destInput" type="text" placeholder="e.g. Salem New Bus Stand" autocomplete="off" />
-    <div id="destResults"></div>
-    <div class="field-row">
+    <div class="card-header-row">
       <div>
-        <label for="alertDistance">Alert me before (km)</label>
-        <input id="alertDistance" type="number" value="1.5" min="0.2" step="0.1" />
+        <div class="dest-badge-title" id="setupBadgeTitle">📍 Destination</div>
+        <div class="dest-main-title" id="setupTitle">Choose your destination</div>
+        <div class="dest-subtitle" id="setupSubtitle">Search above, tap a quick hub, or tap anywhere on the map</div>
+      </div>
+      <button type="button" class="search-action-btn hidden" id="clearSelectionBtn" title="Cancel selection">✕</button>
+    </div>
+
+    <!-- Alert Threshold Stepper & Presets -->
+    <div class="alert-config-box">
+      <div class="alert-config-header">
+        <span>Wake-up Alert Distance</span>
+        <span id="alertRadiusHint">Alerts 1.5 km before stop</span>
+      </div>
+      <div class="alert-stepper-row">
+        <button type="button" class="stepper-btn" id="decAlertDist" title="Decrease distance">−</button>
+        <div class="alert-value-display">
+          <span id="alertDistanceVal">1.5</span>
+          <span class="unit">km</span>
+        </div>
+        <button type="button" class="stepper-btn" id="incAlertDist" title="Increase distance">+</button>
+      </div>
+      <!-- Hidden input for backward compatibility with existing state scripts -->
+      <input id="alertDistance" type="number" value="1.5" min="0.2" step="0.1" class="hidden" />
+
+      <!-- Quick Preset Chips -->
+      <div class="alert-presets">
+        <div class="preset-chip" data-km="0.8">0.8 km</div>
+        <div class="preset-chip active" data-km="1.5">1.5 km (Default)</div>
+        <div class="preset-chip" data-km="2.0">2.0 km</div>
+        <div class="preset-chip" data-km="3.0">3.0 km</div>
       </div>
     </div>
-    <button class="primary" id="startJourneyBtn" disabled>Start journey</button>
-    <button type="button" class="secondary" id="testAlarmBtn" style="margin-top: 10px; width: 100%; border: 1px dashed var(--accent);">🔔 Test Alarm Sound & Vibration</button>
+
+    <!-- Actions -->
+    <div class="card-actions-row">
+      <button class="gm-btn-secondary" id="testAlarmBtn" type="button" title="Test alarm audio and vibration">
+        🔔 Test Alarm
+      </button>
+      <button class="gm-btn-primary" id="startJourneyBtn" disabled>
+        <span>▶ Start Journey</span>
+      </button>
+    </div>
     <div class="error-text" id="journeyError"></div>
   </div>
 
-  <div class="card hidden" id="journeyCard">
+  <!-- Active Journey HUD Card (#journeyCard) -->
+  <div class="floating-card hidden" id="journeyCard">
+    <div class="nav-hud-strip">
+      <div class="hud-badge">
+        <div class="hud-pulse-dot"></div>
+        <span>TRANSIT MONITOR ACTIVE</span>
+      </div>
+      <span id="navAlertZoneText">Alarm set for 1.5 km</span>
+    </div>
+
     <div class="distance-hero">
-      <div class="km" id="distanceKm">--</div>
-      <div class="to" id="destName">--</div>
-      <div class="status-pill" id="statusPill">Tracking location…</div>
+      <div class="km"><span id="distanceKm">--</span><span class="unit">km</span></div>
+      <div class="to" id="destName">Heading to Destination</div>
+      
+      <!-- Alert Progress Bar -->
+      <div class="alert-progress-wrapper" title="Distance progress towards wake-up perimeter">
+        <div class="alert-progress-bar" id="alertProgressBar"></div>
+      </div>
+
+      <div class="status-pill" id="statusPill">Acquiring GPS location…</div>
       <div class="road-stats" id="roadStats"></div>
     </div>
-    <div id="map"></div>
-    <div style="display: flex; gap: 10px; margin-top: 10px;">
-      <button class="secondary" id="testAlarmJourneyBtn" style="flex: 1;">🔔 Test Alarm</button>
-      <button class="secondary" id="endJourneyBtn" style="flex: 1;">End journey</button>
+
+    <div class="card-actions-row">
+      <button class="gm-btn-secondary" id="testAlarmJourneyBtn" type="button" style="flex:1;">
+        🔔 Test Sound
+      </button>
+      <button class="gm-btn-primary" id="endJourneyBtn" type="button" style="flex:1; background:var(--gm-red);">
+        ⏹ End Journey
+      </button>
     </div>
   </div>
-  <audio id="alarmAudioFallback" loop preload="auto" style="display:none;"></audio>
+
 </div>
 
-<!-- STOPS VIEW -->
-<div id="stopsView" class="container hidden">
-  <div class="card">
-    <h2>Tamil Nadu bus stop directory</h2>
-    <p class="lead">Search the stops we already know about. Can't find yours? Raise a ticket and we'll add it.</p>
-    <div class="field-row">
-      <div>
-        <label for="stopSearch">Search by name</label>
-        <input id="stopSearch" type="text" placeholder="e.g. Salem" />
-      </div>
-      <div>
-        <label for="districtFilter">District</label>
-        <select id="districtFilter"><option value="">All districts</option></select>
-      </div>
-    </div>
-    <div id="stopsList" style="margin-top: 10px;"></div>
-  </div>
+<!-- 6. URGENT FULLSCREEN ALARM TAKEOVER MODAL (#alarmBanner) -->
+<div id="alarmBanner" class="alarm-takeover-overlay hidden">
+  <div class="alarm-pulsing-bell">🔔</div>
+  <h2>WAKE UP! YOUR STOP IS NEAR</h2>
+  <p id="alarmText">You are entering your wake-up perimeter. Time to prepare to get off the bus!</p>
+  <button id="stopAlarmBtn" class="alarm-stop-cta">I AM AWAKE · STOP ALARM</button>
+</div>
 
-  <div class="card">
-    <h2>Don't see your stop?</h2>
-    <p class="lead">Raise a ticket with the stop name and location. An admin will review and add it.</p>
-    <label for="ticketName">Stop name</label>
-    <input id="ticketName" type="text" placeholder="e.g. Attur Bus Stand" />
-    <div class="field-row">
+<!-- 7. MODAL SHEETS FOR OTHER VIEWS (Stops, Tickets, Profile, Auth) -->
+
+<!-- AUTH MODAL VIEW -->
+<div id="authView" class="modal-view-overlay">
+  <div class="modal-sheet-card">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+      <div class="brand-icon" style="width:38px; height:38px; font-size:1.2rem;">🚌</div>
       <div>
-        <label for="ticketDistrict">District</label>
-        <input id="ticketDistrict" type="text" placeholder="e.g. Salem" />
-      </div>
-      <div>
-        <label for="ticketUseLocation">Location</label>
-        <button class="secondary" id="ticketUseLocation" style="margin-top:6px; width:100%;">Use my current location</button>
+        <h1 style="margin:0; font-size:1.45rem;">SafeSleep</h1>
+        <div style="font-size:0.82rem; color:var(--ink-secondary); font-weight:600;">Tamil Nadu Bus Wake-Up Alarm</div>
       </div>
     </div>
-    <label for="ticketNote">Note (optional)</label>
-    <input id="ticketNote" type="text" placeholder="Any helpful detail" />
-    <button class="primary" id="submitTicketBtn">Raise ticket</button>
-    <div class="error-text" id="ticketError"></div>
+
+    <p class="lead">Set your destination, sleep peacefully on the journey, and we'll wake you with loud alarms 1.5&nbsp;km before your bus stand.</p>
+
+    <div id="loginForm">
+      <label for="loginEmail">Email Address</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com" />
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" placeholder="••••••••" />
+      <button class="primary" id="loginBtn">Log in to SafeSleep</button>
+      <div class="error-text" id="loginError"></div>
+      <p class="switch-link">New traveller? <a id="showRegister">Create an account</a></p>
+    </div>
+
+    <div id="registerForm" class="hidden">
+      <label for="regName">Full Name</label>
+      <input id="regName" type="text" placeholder="Your name" />
+      <label for="regEmail">Email Address</label>
+      <input id="regEmail" type="email" placeholder="you@example.com" />
+      <label for="regPhone">Phone Number (optional)</label>
+      <input id="regPhone" type="tel" placeholder="9876543210" />
+      <label for="regPassword">Password</label>
+      <input id="regPassword" type="password" placeholder="At least 6 characters" />
+      <button class="primary" id="registerBtn">Create SafeSleep Account</button>
+      <div class="error-text" id="registerError"></div>
+      <p class="switch-link">Already registered? <a id="showLogin">Log in</a></p>
+    </div>
+
+    <!-- Quick Guest Access (Zero Login / 100% Offline Mode) -->
+    <div style="margin: 20px 0 10px; text-align: center; border-top: 1px solid rgba(60,64,67,0.12); padding-top: 16px;">
+      <button class="secondary" id="guestBtn" style="width:100%; font-size:0.95rem; padding:12px; font-weight:700; background:var(--gm-blue-light); color:var(--gm-blue); border-color:rgba(26,115,232,0.3);">
+        ⚡ Use Offline / Continue as Guest
+      </button>
+      <p class="lead" style="font-size:0.8rem; margin:8px 0 0; color:var(--ink-secondary);">Instant access with pre-bundled Tamil Nadu stops & full GPS navigation.</p>
+    </div>
+
+    <div style="margin-top: 12px; border-top: 1px solid rgba(60,64,67,0.12); padding-top: 10px; font-size: 0.85rem; text-align:center;">
+      <a id="toggleServerConfig" style="cursor:pointer; color: var(--ink-secondary); text-decoration: underline;">⚙️ Backend Server Settings</a>
+      <div id="serverConfigBox" class="hidden" style="margin-top: 12px; text-align:left;">
+        <label for="serverUrlInput" style="font-size: 0.8rem;">Backend API Server URL (e.g. Render)</label>
+        <input id="serverUrlInput" type="url" placeholder="https://safesleep.onrender.com/api" />
+        <button class="secondary" id="saveServerUrlBtn" style="margin-top: 8px; width:100%;">Save Server URL</button>
+        <div id="serverUrlStatus" style="margin-top: 6px; font-size: 0.82rem; text-align:center;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BUS STOPS DIRECTORY MODAL VIEW -->
+<div id="stopsView" class="modal-view-overlay container hidden">
+  <div class="modal-sheet-card">
+    <button type="button" class="modal-close-btn" id="closeStopsBtn" title="Close Directory">✕</button>
+
+    <h2>Tamil Nadu Bus Stop Directory</h2>
+    <p class="lead">Search known stops across Tamil Nadu districts. Tap "View on Map" to immediately plot it as your destination.</p>
+
+    <div class="field-row">
+      <div>
+        <label for="stopSearch">Search stop name</label>
+        <input id="stopSearch" type="text" placeholder="e.g. Salem, Gandhipuram, CMBT..." />
+      </div>
+      <div>
+        <label for="districtFilter">Filter District</label>
+        <select id="districtFilter">
+          <option value="">All districts</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="stopsList" style="margin-top: 14px; max-height: 240px; overflow-y:auto; scrollbar-width:thin;"></div>
+
+    <div style="margin-top:24px; padding-top:18px; border-top:1px solid rgba(60,64,67,0.12);">
+      <h2>Missing a bus stop?</h2>
+      <p class="lead">Raise a quick ticket. We'll verify and add it to our offline and online directory.</p>
+      
+      <label for="ticketName">Stop name</label>
+      <input id="ticketName" type="text" placeholder="e.g. Attur Old Bus Stand" />
+
+      <div class="field-row">
+        <div>
+          <label for="ticketDistrict">District</label>
+          <input id="ticketDistrict" type="text" placeholder="e.g. Salem" />
+        </div>
+        <div>
+          <label for="ticketUseLocation">GPS Coordinates</label>
+          <button class="secondary" id="ticketUseLocation" type="button" style="width:100%; margin-top:0; padding:12px 10px;">
+            📍 Use Current Location
+          </button>
+        </div>
+      </div>
+
+      <label for="ticketNote">Note / Landmark (optional)</label>
+      <input id="ticketNote" type="text" placeholder="Near bypass junction, opposite hospital..." />
+
+      <button class="primary" id="submitTicketBtn">Submit Stop Ticket</button>
+      <div class="error-text" id="ticketError"></div>
+    </div>
   </div>
 </div>
 
 <!-- TICKETS VIEW -->
-<div id="ticketsView" class="container hidden">
-  <div class="card">
-    <h2>My tickets</h2>
-    <p class="lead" id="ticketsSubtitle">Stops you've asked us to add.</p>
-    <div id="ticketsList"></div>
+<div id="ticketsView" class="modal-view-overlay container hidden">
+  <div class="modal-sheet-card">
+    <button type="button" class="modal-close-btn" id="closeTicketsBtn" title="Close Tickets">✕</button>
+    <h2>My Submitted Tickets</h2>
+    <p class="lead" id="ticketsSubtitle">Track the status of stops you have suggested to the directory.</p>
+    <div id="ticketsList" style="margin-top: 12px;"></div>
   </div>
 </div>
 
 <!-- PROFILE VIEW -->
-<div id="profileView" class="container hidden">
-  <div class="card">
-    <h2>Your profile</h2>
+<div id="profileView" class="modal-view-overlay container hidden">
+  <div class="modal-sheet-card">
+    <button type="button" class="modal-close-btn" id="closeProfileBtn" title="Close Profile">✕</button>
+    <h2>Traveller Profile</h2>
     <div class="profile-row"><div class="k">Name</div><div id="pName">--</div></div>
     <div class="profile-row"><div class="k">Email</div><div id="pEmail">--</div></div>
     <div class="profile-row"><div class="k">Phone</div><div id="pPhone">--</div></div>
     <div class="profile-row"><div class="k">Role</div><div id="pRole">--</div></div>
-    <label for="editName" style="margin-top:20px;">Update name</label>
+
+    <label for="editName" style="margin-top:20px;">Update Display Name</label>
     <input id="editName" type="text" />
-    <label for="editPhone">Update phone</label>
+    <label for="editPhone">Update Phone</label>
     <input id="editPhone" type="tel" />
-    <button class="primary" id="saveProfileBtn">Save changes</button>
+    <button class="primary" id="saveProfileBtn">Save Profile Changes</button>
     <div class="error-text" id="profileMsg"></div>
   </div>
 </div>
 
+<!-- Audio fallback element -->
+<audio id="alarmAudioFallback" loop preload="auto" style="display:none;"></audio>
+
+<!-- Leaflet Library -->
 <script src="vendor/leaflet/leaflet.js"></script>
 <script>
   if (typeof L === "undefined") {
     document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
   }
 </script>
+
+<!-- SafeSleep Main Logic -->
 <script src="app.js"></script>
+
+<!-- Service Worker Registration -->
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").then(
-        (reg) => console.log("SafeSleep ServiceWorker registered:", reg.scope),
+        (reg) => console.log("SafeSleep ServiceWorker active:", reg.scope),
         (err) => console.warn("SafeSleep ServiceWorker registration failed:", err)
       );
     });

@@ -1,4 +1,4 @@
-const CACHE_NAME = "safesleep-shell-v2";
+const CACHE_NAME = "safesleep-shell-v3";
 const ASSETS_TO_CACHE = [
   "/",
   "/index.html",
