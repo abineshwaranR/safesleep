@@ -21,8 +21,8 @@
 
 <!-- Leaflet CSS -->
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
-<!-- App CSS -->
-<link rel="stylesheet" href="style.css" />
+<!-- App CSS with cache buster -->
+<link rel="stylesheet" href="style.css?v=4.0" />
 </head>
 <body>
 
@@ -371,17 +371,17 @@
   }
 </script>
 
-<!-- SafeSleep Main Logic -->
-<script src="app.js"></script>
+<!-- SafeSleep Main Logic with cache buster -->
+<script src="app.js?v=4.0"></script>
 
 <!-- Service Worker Registration -->
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").then(
-        (reg) => console.log("SafeSleep ServiceWorker active:", reg.scope),
-        (err) => console.warn("SafeSleep ServiceWorker registration failed:", err)
-      );
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        reg.update();
+        console.log("SafeSleep ServiceWorker active:", reg.scope);
+      }).catch((err) => console.warn("SafeSleep ServiceWorker registration failed:", err));
     });
   }
 </script>

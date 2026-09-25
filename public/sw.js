@@ -1,4 +1,4 @@
-const CACHE_NAME = "safesleep-shell-v3";
+const CACHE_NAME = "safesleep-shell-v4";
 const ASSETS_TO_CACHE = [
   "/",
   "/index.html",
@@ -23,13 +23,14 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: Clean up old caches
+// Activate: Clean up old caches immediately
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log("SafeSleep: Removing old cache:", key);
             return caches.delete(key);
           }
         })
@@ -39,11 +40,11 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: Network-first for API, Cache-first / Stale-while-revalidate for static assets
+// Fetch: Network-First strategy (always load latest UI from server when connected; fall back to cache when offline)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Always use network for API calls, geocoding, and routing
+  // Always use network directly for API calls, geocoding, and routing
   if (
     url.pathname.startsWith("/api") ||
     url.hostname.includes("nominatim") ||
@@ -51,28 +52,27 @@ self.addEventListener("fetch", (event) => {
     url.hostname.includes("overpass") ||
     event.request.method !== "GET"
   ) {
-    return; // Pass through to network
+    return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            networkResponse.type === "basic"
-          ) {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(() => cachedResponse);
-
-      return cachedResponse || fetchPromise;
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (
+          networkResponse &&
+          networkResponse.status === 200 &&
+          networkResponse.type === "basic"
+        ) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Network failed (offline travel mode) -> serve cached shell
+        return caches.match(event.request);
+      })
   );
 });

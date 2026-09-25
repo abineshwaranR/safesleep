@@ -42,7 +42,17 @@ app.use("/api/auth", authRoutes);
 app.use("/api/stops", stopsRoutes);
 app.use("/api/tickets", ticketsRoutes);
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".html") || filePath.endsWith(".js") || filePath.endsWith(".css") || filePath.endsWith(".json")) {
+        res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      }
+    }
+  })
+);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
